@@ -719,7 +719,14 @@ class TelethonService:
             async def create_topic_with_retry(topic, max_retries=3):
                 for attempt in range(max_retries):
                     try:
-                        emoji_id = emoji_map.get(topic.icon_emoji)
+                        # Получаем emoji_id из рабочего списка
+                        emoji_id = None
+                        if topic.icon_emoji:
+                            with open("working_topic_emojis.json", "r", encoding="utf-8") as f:
+                                emoji_map = json.load(f)
+                                emoji_id = emoji_map.get(topic.icon_emoji)
+                                logger.info(f"[TOPIC] Для топика '{topic.title}' иконка {topic.icon_emoji} -> emoji_id: {emoji_id}")
+
                         if emoji_id:
                             topic_obj = await bot_instance.create_forum_topic(
                                 chat_id=botapi_chat_id,
@@ -773,32 +780,43 @@ class TelethonService:
                     participants = await self.client.get_participants(channel.id)
                     user_in_chat = any(p.id == user_id for p in participants)
                     logger.info(f"[CHECK USER] Пользователь {user_id} {'есть' if user_in_chat else 'нет'} в участниках чата после создания")
+                    
+                    # Если пользователь в чате — делаем админом
+                    if user_in_chat:
+                        try:
+                            admin_result = await self.make_chat_admin(channel.id, user_id)
+                            if admin_result:
+                                logger.info(f"[ADMIN] Пользователь {user_id} назначен админом после проверки участников")
+                            else:
+                                logger.warning(f"[ADMIN] Не удалось назначить пользователя {user_id} админом после проверки участников")
+                        except Exception as e:
+                            logger.error(f"[ADMIN] Ошибка при назначении админа: {e}")
                 except Exception as e:
                     logger.warning(f"[CHECK USER] Не удалось получить участников чата: {e}")
-            # Если пользователь в чате — делаем админом (если ещё не сделали)
-            if user_in_chat:
-                admin_result = await self.make_chat_admin(channel.id, user_id)
-                if admin_result:
-                    logger.info(f"[ADMIN] Пользователь {user_id} назначен админом после проверки участников")
-                else:
-                    logger.warning(f"[ADMIN] Не удалось назначить пользователя {user_id} админом после проверки участников")
-                # Возвращаем результат без invite_link
-                return {
-                    "chat_id": channel.id,
-                    "chat_name": chat_data.title,
-                    "description": chat_data.description,
-                    "user_added": True
-                }
-            else:
-                # Если пользователя нет — отправляем invite_link
-                logger.info(f"[INVITE] Пользователь {user_id} не был добавлен, отправляю invite_link")
-                return {
-                    "chat_id": channel.id,
-                    "chat_name": chat_data.title,
-                    "description": chat_data.description,
-                    "invite_link": invite_link,
-                    "user_added": False
-                }
+
+            # Сохраняем шаблон, если это создание из шаблона
+            if hasattr(chat_data, 'template_name') and chat_data.template_name:
+                try:
+                    template = ChatTemplate(
+                        name=chat_data.template_name,
+                        chat_name=chat_data.title,
+                        description=chat_data.description,
+                        topics=chat_data.topics,
+                        user_id=user_id
+                    )
+                    await self.save_chat_template(user_id, template)
+                    logger.info(f"[TEMPLATE] Шаблон '{chat_data.template_name}' сохранен")
+                except Exception as e:
+                    logger.error(f"[TEMPLATE] Ошибка при сохранении шаблона: {e}")
+
+            # Возвращаем результат
+            return {
+                "chat_id": channel.id,
+                "chat_name": chat_data.title,
+                "description": chat_data.description,
+                "user_added": user_in_chat,
+                "invite_link": invite_link if not user_in_chat else None
+            }
 
         except Exception as e:
             logger.error(f"Ошибка при создании форум-чата: {e}")
@@ -994,39 +1012,39 @@ class TelethonService:
             self._templates = {} 
 
     async def make_chat_admin(self, chat_id: int, user_id: int) -> bool:
-        """Make user an admin in the chat"""
-        try:
-            chat = await self.client.get_entity(chat_id)
-            # Пробуем получить пользователя через get_entity
+        """Make user an admin in the chat, with retries if user not found immediately."""
+        import asyncio
+        chat = await self.client.get_entity(chat_id)
+        user = None
+        for attempt in range(3):
             try:
-                user = await self.client.get_entity(user_id)
-            except ValueError:
-                # Если не получилось, пробуем через resolve_username (если есть username)
-                try:
-                    # Получаем участников чата
-                    participants = await self.client.get_participants(chat)
-                    # Ищем пользователя среди участников
-                    user = next((p for p in participants if p.id == user_id), None)
-                    if not user:
-                        logger.error(f"User {user_id} not found in chat participants")
-                        return False
-                except Exception as e:
-                    logger.error(f"Error getting user from participants: {e}")
-                    return False
+                participants = await self.client.get_participants(chat)
+                user = next((p for p in participants if p.id == user_id), None)
+                if user:
+                    break
+                logger.warning(f'[make_chat_admin] Attempt {attempt+1}: User {user_id} not found, waiting 5 seconds...')
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Error getting user from participants: {e}")
+                return False
+        if not user:
+            logger.error(f"User {user_id} not found in chat participants after 3 attempts")
+            return False
 
-            admin_rights = ChatAdminRights(
-                add_admins=True,
-                change_info=True,
-                post_messages=True,
-                edit_messages=True,
-                delete_messages=True,
-                ban_users=True,
-                invite_users=True,
-                pin_messages=True,
-                manage_call=True,
-                manage_topics=True,
-                anonymous=False
-            )
+        admin_rights = ChatAdminRights(
+            add_admins=True,
+            change_info=True,
+            post_messages=True,
+            edit_messages=True,
+            delete_messages=True,
+            ban_users=True,
+            invite_users=True,
+            pin_messages=True,
+            manage_call=True,
+            manage_topics=True,
+            anonymous=False
+        )
+        try:
             await self.client(EditAdminRequest(
                 chat,
                 user,
@@ -1095,4 +1113,13 @@ class TelethonService:
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Ошибка смены иконки топика (EditForumTopicRequest): {e}")
+            return False 
+
+    async def is_user_in_chat(self, chat_id: int, user_id: int) -> bool:
+        """Проверяет, состоит ли пользователь с user_id в чате chat_id"""
+        try:
+            participants = await self.client.get_participants(chat_id)
+            return any(p.id == user_id for p in participants)
+        except Exception as e:
+            # Можно залогировать ошибку
             return False 

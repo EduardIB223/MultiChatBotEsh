@@ -158,7 +158,7 @@
         {
           "title": "аав",
           "description": "",
-          "icon_emoji": null,
+          "icon_emoji": "🎄",
           "icon_color": 0,
           "is_closed": false,
           "is_hidden": false
@@ -260,6 +260,177 @@
       ],
       "user_id": 639968191,
       "created_at": "2025-05-11T15:52:36.896840"
+    },
+    {
+      "name": ";",
+      "chat_name": ";",
+      "description": ";",
+      "topics": [
+        {
+          "title": "njgbrytqv",
+          "description": "ррр",
+          "icon_emoji": "👠",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        },
+        {
+          "title": ";",
+          "description": ";",
+          "icon_emoji": "🦠",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        }
+      ],
+      "user_id": 639968191,
+      "created_at": "2025-05-24T14:26:47.222954"
+    },
+    {
+      "name": "ы",
+      "chat_name": "ы",
+      "description": "ы",
+      "topics": [
+        {
+          "title": "es",
+          "description": "s",
+          "icon_emoji": "👶",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        },
+        {
+          "title": "d",
+          "description": "d",
+          "icon_emoji": "❓",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        }
+      ],
+      "user_id": 639968191,
+      "created_at": "2025-05-24T15:29:58.074633"
+    },
+    {
+      "name": "вв",
+      "chat_name": "вв",
+      "description": "вв",
+      "topics": [
+        {
+          "title": "вв",
+          "description": "вв",
+          "icon_emoji": "🎃",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        }
+      ],
+      "user_id": 639968191,
+      "created_at": "2025-05-24T15:59:11.331123"
+    }
+  ],
+  "762924889": [
+    {
+      "name": "навзанеи",
+      "chat_name": "чат",
+      "description": "описание",
+      "topics": [
+        {
+          "title": "один",
+          "description": ".",
+          "icon_emoji": "👨‍👩‍👧‍👦",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        },
+        {
+          "title": "два",
+          "description": "описание",
+          "icon_emoji": "👠",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        }
+      ],
+      "user_id": 762924889,
+      "created_at": "2025-05-24T14:49:55.583792"
+    },
+    {
+      "name": "название2",
+      "chat_name": "фыва",
+      "description": "описание2",
+      "topics": [
+        {
+          "title": "один2",
+          "description": "описание2",
+          "icon_emoji": "🧠",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        },
+        {
+          "title": "два2",
+          "description": ".",
+          "icon_emoji": "🍕",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        },
+        {
+          "title": "три2",
+          "description": "",
+          "icon_emoji": "💬",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        }
+      ],
+      "user_id": 762924889,
+      "created_at": "2025-05-24T14:50:51.851230"
+    }
+  ],
+  "1277451946": [
+    {
+      "name": "sdefse",
+      "chat_name": "название",
+      "description": ".",
+      "topics": [
+        {
+          "title": "1",
+          "description": ".",
+          "icon_emoji": "🎄",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        },
+        {
+          "title": "2.",
+          "description": ".",
+          "icon_emoji": "🎄",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        }
+      ],
+      "user_id": 1277451946,
+      "created_at": "2025-05-24T14:57:20.197739"
+    },
+    {
+      "name": "saf",
+      "chat_name": "fsd",
+      "description": "",
+      "topics": [
+        {
+          "title": "fsd",
+          "description": "asdf",
+          "icon_emoji": "🎄",
+          "icon_color": 0,
+          "is_closed": false,
+          "is_hidden": false
+        }
+      ],
+      "user_id": 1277451946,
+      "created_at": "2025-05-24T15:26:19.808167"
     }
   ]
 }

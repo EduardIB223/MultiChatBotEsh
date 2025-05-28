@@ -223,172 +223,6 @@ async def skip_topic_emoji_creation(message: Message, state: FSMContext):
     )
     await state.set_state(TemplateCreation.topics)
 
-@router.callback_query(F.data.in_(["make_admin", "skip_admin"]))
-async def handle_admin_actions(callback: CallbackQuery, state: FSMContext, telethon: TelethonService):
-    """Handle admin action callbacks"""
-    try:
-        logger.info(f"Processing admin action: {callback.data}")
-        
-        # Get chat_id from state
-        state_data = await state.get_data()
-        chat_id = state_data.get("created_chat_id")
-        
-        if not chat_id:
-            logger.error("No chat_id found in state")
-            await callback.answer("❌ Ошибка: ID чата не найден", show_alert=True)
-            await state.clear()
-            return
-
-        if callback.data == "make_admin":
-            logger.info(f"Making user {callback.from_user.id} admin in chat {chat_id}")
-            # Show processing message
-            await callback.answer("⏳ Назначаю вас администратором...", show_alert=False)
-            
-            try:
-                success = await telethon.make_chat_admin(chat_id, callback.from_user.id)
-                if success:
-                    logger.info("Successfully made user admin")
-                    await callback.message.edit_text(
-                        f"✅ Вы успешно назначены администратором чата!\n\n"
-                        f"Теперь вы можете управлять чатом и его разделами.",
-                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_main")]
-                        ])
-                    )
-                else:
-                    logger.error("Failed to make user admin")
-                    await callback.message.edit_text(
-                        "❌ Не удалось назначить вас администратором.\n"
-                        "Попробуйте позже или обратитесь к владельцу бота.",
-                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="🔄 Повторить", callback_data="make_admin")],
-                            [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="skip_admin")]
-                        ])
-                    )
-            except Exception as e:
-                logger.error(f"Error making user admin: {str(e)}", exc_info=True)
-                await callback.message.edit_text(
-                    "❌ Произошла ошибка при назначении администратором.\n"
-                    "Попробуйте позже или обратитесь к владельцу бота.",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🔄 Повторить", callback_data="make_admin")],
-                        [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="skip_admin")]
-                    ])
-                )
-        
-        elif callback.data == "skip_admin":
-            logger.info("User skipped admin assignment")
-            await callback.message.edit_text(
-                "👌 Вы пропустили назначение администратором.\n"
-                "Вы всегда можете попросить текущего администратора назначить вас позже.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_main")]
-                ])
-            )
-        
-        # Clear state after processing
-        await state.clear()
-        
-    except Exception as e:
-        logger.error(f"Error in handle_admin_actions: {str(e)}", exc_info=True)
-        await callback.answer("❌ Произошла ошибка", show_alert=True)
-        await state.clear()
-
-def register_commands(dp: Dispatcher, telethon: TelethonService):
-    """
-    Регистрирует все обработчики команд
-    
-    Args:
-        dp: Диспетчер
-        telethon: Сервис Telethon
-    """
-    # Регистрируем middleware для всех типов обновлений
-    dp.message.middleware(TelethonMiddleware(telethon))
-    dp.callback_query.middleware(TelethonMiddleware(telethon))
-    
-    # Регистрируем обработчики состояний
-    router.message.filter(F.chat.type == "private")  # Only handle private messages
-    
-    # Регистрируем обработчики для состояния waiting_admin_action
-    router.message.register(make_me_admin, ChatStates.waiting_admin_action, F.text == "🔑 Сделать меня админом")
-    router.callback_query.register(make_me_admin_callback, F.data == "make_admin")
-    router.callback_query.register(skip_admin, F.data == "skip_admin")
-    
-    # Add router to dispatcher
-    dp.include_router(router)
-
-@router.message(ChatStates.waiting_admin_action, F.text == "🔑 Сделать меня админом")
-async def make_me_admin(message: Message, state: FSMContext, telethon: TelethonService):
-    """Обработчик нажатия кнопки 'Сделать меня админом'"""
-    await process_admin_request(message, state, telethon, message.from_user.id)
-
-@router.callback_query(F.data == "make_admin")
-async def make_me_admin_callback(callback: CallbackQuery, state: FSMContext, telethon: TelethonService):
-    """Обработчик нажатия инлайн-кнопки админа"""
-    await callback.answer()
-    await process_admin_request(callback.message, state, telethon, callback.from_user.id)
-
-async def process_admin_request(message: Message, state: FSMContext, telethon: TelethonService, user_id: int):
-    """Общая логика обработки запроса на получение прав администратора"""
-    try:
-        # Получаем данные из состояния
-        state_data = await state.get_data()
-        chat_id = state_data.get("created_chat_id")
-        
-        if not chat_id:
-            await message.answer(
-                "❌ Ошибка: ID чата не найден. Попробуйте создать чат заново.",
-                reply_markup=get_main_keyboard()
-            )
-            await state.clear()
-            return
-            
-        # Отправляем сообщение о процессе
-        status_msg = await message.answer("⏳ Назначаю вас супер-администратором...")
-        
-        logger.info(f"Attempting to make user {user_id} super admin in chat {chat_id}")
-        
-        # Пытаемся сделать пользователя супер-администратором
-        success = await telethon.make_chat_admin(chat_id, user_id)
-        
-        if success:
-            await status_msg.edit_text(
-                "✅ Вы успешно назначены супер-администратором!\n\n"
-                "Теперь у вас есть все права на управление чатом:\n"
-                "• Изменение информации о чате\n"
-                "• Управление сообщениями и топиками\n"
-                "• Управление пользователями\n"
-                "• Назначение администраторов\n"
-                "• Управление звонками и историями\n"
-                "И многое другое!",
-                reply_markup=get_main_keyboard()
-            )
-        else:
-            await status_msg.edit_text(
-                "❌ Не удалось назначить вас администратором.\n"
-                "Возможно, возникла ошибка при выполнении операции.",
-                reply_markup=get_main_keyboard()
-            )
-            
-    except Exception as e:
-        logger.error(f"Error in process_admin_request: {str(e)}", exc_info=True)
-        await message.answer(
-            "❌ Произошла ошибка при назначении администратора.",
-            reply_markup=get_main_keyboard()
-        )
-    finally:
-        await state.clear()
-
-@router.callback_query(F.data == "skip_admin")
-async def skip_admin(callback: CallbackQuery, state: FSMContext):
-    """Обработчик нажатия кнопки 'Пропустить'"""
-    await callback.message.edit_text(
-        "Вы пропустили назначение администратором.",
-        reply_markup=get_main_keyboard()
-    )
-    await callback.answer()
-    await state.clear()
-
 @router.message(F.text == "📁 Мои шаблоны")
 async def show_templates(message: Message, state: FSMContext, telethon: TelethonService):
     templates = await telethon.get_user_templates(message.from_user.id)
@@ -540,7 +374,7 @@ async def handle_template_actions(message: Message, state: FSMContext, telethon:
                         ),
                         parse_mode="HTML"
                     )
-                    await state.update_data(created_chat_id=result['chat_id'])
+                    await state.update_data(created_chat_id=result['chat_id'], invite_link=invite_link)
                     return
             else:
                 await status_msg.edit_text(
@@ -827,7 +661,7 @@ async def create_chat_from_template(message: Message, state: FSMContext, teletho
                     ),
                     parse_mode="HTML"
                 )
-                await state.update_data(created_chat_id=result['chat_id'])
+                await state.update_data(created_chat_id=result['chat_id'], invite_link=invite_link)
                 return
         else:
             await status_msg.edit_text(
@@ -863,9 +697,9 @@ async def save_template(message: Message, state: FSMContext, telethon: TelethonS
             topics=[Topic(**t) if isinstance(t, dict) else t for t in topics],
             user_id=message.from_user.id
         )
-        # Если редактируется существующий шаблон, передаём old_name
+        # Если редактируется существующий шаблон, передаём original_template_name
         if "selected_template" in data:
-            old_name = data["selected_template"].get("name") or data["selected_template"].get("template_name")
+            old_name = data.get("original_template_name") or data["selected_template"].get("name") or data["selected_template"].get("template_name")
             result = await telethon.save_chat_template(
                 user_id=message.from_user.id,
                 template=chat_template,
@@ -887,6 +721,8 @@ async def save_template(message: Message, state: FSMContext, telethon: TelethonS
 
 @router.message(TemplateManagement.completed, F.text.func(lambda t: t and t.strip() == "🚀 Сохранить и создать"))
 async def save_and_create(message: Message, state: FSMContext, telethon: TelethonService):
+    import logging
+    logger = logging.getLogger(__name__)
     data = await state.get_data()
     template = data.get("selected_template") or data
     template_name = template.get("template_name") or template.get("name")
@@ -897,6 +733,7 @@ async def save_and_create(message: Message, state: FSMContext, telethon: Teletho
         await message.answer("❌ Не хватает данных для сохранения шаблона. Похоже, шаблон повреждён.", reply_markup=get_main_keyboard())
         await state.clear()
         return
+    # Сохраняем шаблон
     try:
         chat_template = ChatTemplate(
             name=template_name,
@@ -905,7 +742,6 @@ async def save_and_create(message: Message, state: FSMContext, telethon: Teletho
             topics=[Topic(**t) if isinstance(t, dict) else t for t in topics],
             user_id=message.from_user.id
         )
-        # Сохраняем шаблон
         if "selected_template" in data:
             old_name = data["selected_template"].get("name") or data["selected_template"].get("template_name")
             save_result = await telethon.save_chat_template(
@@ -919,9 +755,17 @@ async def save_and_create(message: Message, state: FSMContext, telethon: Teletho
                 template=chat_template
             )
         if not save_result:
-            await message.answer("❌ Не удалось сохранить шаблон.", reply_markup=get_main_keyboard())
+            logger.error(f"[save_and_create] Не удалось сохранить шаблон '{template_name}' для пользователя {message.from_user.id}")
+            await message.answer("❌ Не удалось сохранить шаблон. Возможно, шаблон с таким именем уже существует или произошла ошибка.", reply_markup=get_main_keyboard())
             await state.clear()
             return
+    except Exception as e:
+        logger.error(f"[save_and_create] Ошибка при сохранении шаблона: {e}")
+        await message.answer(f"❌ Произошла ошибка при сохранении шаблона: {e}", reply_markup=get_main_keyboard())
+        await state.clear()
+        return
+    # Создаём чат
+    try:
         clean_topics = []
         for t in topics:
             t = dict(t) if isinstance(t, dict) else t.dict()
@@ -959,17 +803,18 @@ async def save_and_create(message: Message, state: FSMContext, telethon: Teletho
                     ),
                     parse_mode="HTML"
                 )
-                await state.update_data(created_chat_id=result['chat_id'])
+                await state.update_data(created_chat_id=result['chat_id'], invite_link=invite_link)
                 return
         else:
+            logger.error(f"[save_and_create] Не удалось создать чат для шаблона '{template_name}' пользователя {message.from_user.id}")
             await status_msg.edit_text(
                 "❌ Не удалось создать чат. Попробуйте позже.",
                 reply_markup=None
             )
             await state.clear()
     except Exception as e:
-        logger.error(f"Error in save_and_create: {e}")
-        await message.answer("❌ Произошла ошибка при сохранении шаблона или создании чата.", reply_markup=get_main_keyboard())
+        logger.error(f"[save_and_create] Ошибка при создании чата: {e}")
+        await message.answer(f"❌ Произошла ошибка при создании чата: {e}", reply_markup=get_main_keyboard())
         await state.clear()
 
 @router.message(TemplateManagement.completed, F.text.func(lambda t: t and t.strip() == "✏️ Редактировать"))
@@ -1061,6 +906,37 @@ async def skip_edit_topic_emoji(message: Message, state: FSMContext):
             await state.update_data(selected_template=selected)
     await message.answer("Эмодзи топика очищено!")
     await handle_edit_topics(message, state)
+
+@router.message(TemplateManagement.adding_topic_emoji, F.text == "❌ Отменить добавление")
+async def cancel_add_topic_emoji(message: Message, state: FSMContext):
+    await handle_edit_topics(message, state)
+
+@router.callback_query(TemplateManagement.adding_topic_emoji)
+async def process_add_topic_emoji(callback: CallbackQuery, state: FSMContext):
+    if not callback.data or not callback.data.startswith("add_emoji_"):
+        await callback.answer("Пожалуйста, выберите эмодзи с клавиатуры.", show_alert=True)
+        return
+    emoji = callback.data.replace("add_emoji_", "")
+    data = await state.get_data()
+    topics = data.get("topics", [])
+    new_topic = {
+        "title": data["current_topic_name"],
+        "description": data.get("current_topic_description", ""),
+        "icon_emoji": emoji,
+        "icon_color": None,
+        "is_closed": False,
+        "is_hidden": False
+    }
+    topics.append(new_topic)
+    await state.update_data(topics=topics)
+    # Синхронизируем с selected_template, если есть
+    if "selected_template" in data:
+        selected = data["selected_template"]
+        selected["topics"] = topics
+        await state.update_data(selected_template=selected)
+    await callback.message.edit_reply_markup()
+    await callback.message.answer("Топик добавлен!")
+    await handle_edit_topics(callback.message, state)
 
 @router.message(TemplateManagement.editing_topics, F.text == "✅ Завершить изменения")
 async def finish_editing_topics(message: Message, state: FSMContext):
@@ -1244,6 +1120,17 @@ async def handle_edit_topic_field_select(message: Message, state: FSMContext):
 
 @router.message(TemplateManagement.editing_topic_field_select, F.text == "✏️ Изменить название")
 async def process_edit_topic_name(message: Message, state: FSMContext):
+    await message.answer(
+        "Введите новое название топика:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="❌ Отмена")]],
+            resize_keyboard=True
+        )
+    )
+    await state.set_state(TemplateManagement.editing_topic_name)
+
+@router.message(TemplateManagement.editing_topic_name)
+async def process_edit_topic_name_input(message: Message, state: FSMContext):
     if message.text == "❌ Отмена":
         await handle_edit_topics(message, state)
         return
@@ -1262,11 +1149,22 @@ async def process_edit_topic_name(message: Message, state: FSMContext):
             selected = data["selected_template"]
             selected["topics"] = topics
             await state.update_data(selected_template=selected)
-    await message.answer("Название топика обновлено!", reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="❌ Отмена")]], resize_keyboard=True))
+    await message.answer("Название топика обновлено!")
     await handle_edit_topics(message, state)
 
 @router.message(TemplateManagement.editing_topic_field_select, F.text == "📝 Изменить описание")
 async def process_edit_topic_description(message: Message, state: FSMContext):
+    await message.answer(
+        "Введите новое описание топика (или отправьте точку для пропуска):",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=".")], [KeyboardButton(text="❌ Отмена")]],
+            resize_keyboard=True
+        )
+    )
+    await state.set_state(TemplateManagement.editing_topic_description)
+
+@router.message(TemplateManagement.editing_topic_description)
+async def process_edit_topic_description_input(message: Message, state: FSMContext):
     if message.text == "❌ Отмена":
         await handle_edit_topics(message, state)
         return
@@ -1274,14 +1172,14 @@ async def process_edit_topic_description(message: Message, state: FSMContext):
     topics = data.get("topics", [])
     idx = data.get("editing_topic_index")
     if idx is not None and 0 <= idx < len(topics):
-        topics[idx]["description"] = message.text if message.text != "." else "."
+        topics[idx]["description"] = message.text if message.text != "." else ""
         await state.update_data(topics=topics)
         # Синхронизируем с selected_template
         if "selected_template" in data:
             selected = data["selected_template"]
             selected["topics"] = topics
             await state.update_data(selected_template=selected)
-    await message.answer("Описание топика обновлено!", reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="❌ Отмена")]], resize_keyboard=True))
+    await message.answer("Описание топика обновлено!")
     await handle_edit_topics(message, state)
 
 @router.message(TemplateManagement.editing_topic_field_select, F.text == "🎨 Изменить эмодзи")
@@ -1318,8 +1216,6 @@ async def select_edit_topic_emoji(message: Message, state: FSMContext):
 
 @router.callback_query(TemplateManagement.editing_topic_emoji)
 async def process_edit_topic_emoji(callback: CallbackQuery, state: FSMContext):
-    current_state = await state.get_state()
-    logger.warning(f"[DEBUG] process_edit_topic_emoji: callback.data={callback.data}, state={current_state}")
     if not callback.data or not callback.data.startswith("edit_emoji_"):
         await callback.answer("Пожалуйста, выберите эмодзи с клавиатуры.", show_alert=True)
         return
@@ -1497,57 +1393,104 @@ async def handle_edit_topics(message, state):
     )
     await state.set_state(TemplateManagement.editing_topics)
 
-@router.callback_query()
-async def test_all_callbacks(callback: CallbackQuery, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state and current_state != "None":
-        return
-    logger.warning(f"[DEBUG] Callback data: {callback.data}")
-    await callback.answer("Callback получен (debug)", show_alert=True)
+@router.callback_query(F.data == "back_to_main")
+async def back_to_main_callback(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await callback.message.edit_text("Вы вернулись в главное меню.")
+    except Exception:
+        pass
+    await callback.message.answer("Выберите действие:", reply_markup=get_main_keyboard())
+    await callback.answer()
 
-@router.message(TemplateManagement.editing_topic_emoji, F.text.in_([".", "Пропустить", "Очистить эмодзи"]))
-async def skip_editing_topic_emoji(message: Message, state: FSMContext):
-    data = await state.get_data()
-    topics = data.get("topics", [])
-    idx = data.get("editing_topic_index")
-    if idx is not None and 0 <= idx < len(topics):
-        topics[idx]["icon_emoji"] = None
-        await state.update_data(topics=topics)
-        # Синхронизируем с selected_template
-        if "selected_template" in data:
-            selected = data["selected_template"]
-            selected["topics"] = topics
-            await state.update_data(selected_template=selected)
-    await message.answer("Эмодзи топика очищено!")
-    await handle_edit_topics(message, state)
-
-@router.callback_query(TemplateManagement.adding_topic_emoji)
-async def process_add_topic_emoji(callback: CallbackQuery, state: FSMContext):
-    if not callback.data or not callback.data.startswith("add_emoji_"):
-        await callback.answer("Пожалуйста, выберите эмодзи с клавиатуры.", show_alert=True)
+@router.callback_query(F.data == "make_admin")
+async def make_me_admin_callback(callback: CallbackQuery, state: FSMContext, telethon: TelethonService):
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"[DEBUG] make_admin_callback: callback={callback.data}, user={callback.from_user.id}, state={await state.get_state()}")
+    state_data = await state.get_data()
+    chat_id = state_data.get("created_chat_id")
+    invite_link = state_data.get("invite_link")
+    # Если invite_link отсутствует, пробуем получить его через Telethon
+    if chat_id and not invite_link:
+        try:
+            invite_link = await telethon.get_invite_link(chat_id)
+            if invite_link:
+                await state.update_data(invite_link=invite_link)
+        except Exception as e:
+            logger.error(f"[make_admin] Не удалось получить invite_link для чата {chat_id}: {e}")
+    if not chat_id:
+        logger.warning(f"[make_admin] Нет chat_id в состоянии для пользователя {callback.from_user.id}, кидаю в главное меню")
+        await callback.message.edit_text(
+            "❌ Ошибка: ID чата не найден. Возвращаю вас в главное меню.",
+            reply_markup=get_main_keyboard()
+        )
+        await state.clear()
+        await callback.answer()
         return
-    emoji = callback.data.replace("add_emoji_", "")
-    data = await state.get_data()
-    topics = data.get("topics", [])
-    new_topic = {
-        "title": data["current_topic_name"],
-        "description": data.get("current_topic_description", ""),
-        "icon_emoji": emoji,
-        "icon_color": None,
-        "is_closed": False,
-        "is_hidden": False
-    }
-    topics.append(new_topic)
-    await state.update_data(topics=topics)
-    # Синхронизируем с selected_template
-    if "selected_template" in data:
-        selected = data["selected_template"]
-        selected["topics"] = topics
-        await state.update_data(selected_template=selected)
-    preview = format_template_preview(data.get("template_name") or data.get("name"), data.get("chat_name"), topics, data.get("chat_description", ""))
-    await callback.message.edit_reply_markup()
-    await callback.message.answer(
-        f"{preview}\n\nВыберите действие:",
-        reply_markup=get_topic_edit_keyboard()
-    )
-    await state.set_state(TemplateManagement.editing_topics)
+    logger.info(f"[make_admin] Есть chat_id={chat_id} для пользователя {callback.from_user.id}, пробую сделать админом")
+    # Проверяем, состоит ли пользователь в чате
+    is_member = await telethon.is_user_in_chat(chat_id, callback.from_user.id)
+    if not is_member:
+        logger.info(f"[make_admin] Пользователь {callback.from_user.id} не состоит в чате {chat_id}, просим зайти в чат")
+        text = ""
+        if invite_link:
+            text += f"🔗 <b>Ссылка для входа:</b> {invite_link}\n\n"
+        text += "❗️ Я не вижу вас в участниках чата.\nВойдите в чат по ссылке выше, затем нажмите 'Повторить' или 'Сделать меня админом'."
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🔄 Повторить", callback_data="make_admin")],
+                    [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="skip_admin")],
+                    [InlineKeyboardButton(text="🔑 Сделать меня админом", callback_data="make_admin")]
+                ]
+            ),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+    logger.info(f"[make_admin] Пользователь {callback.from_user.id} состоит в чате {chat_id}, назначаю админом...")
+    status_msg = await callback.message.edit_text("⏳ Назначаю вас администратором...")
+    success = await telethon.make_chat_admin(chat_id, callback.from_user.id)
+    if success:
+        logger.info(f"[make_admin] Успешно назначен админом: {callback.from_user.id} в чате {chat_id}")
+        await callback.message.edit_text(
+            "✅ Вы успешно назначены администратором чата!",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_main")]]
+            )
+        )
+        await state.clear()
+    else:
+        logger.error(f"[make_admin] Не удалось назначить админом: {callback.from_user.id} в чате {chat_id}")
+        error_text = ""
+        if invite_link:
+            error_text += f"🔗 <b>Ссылка для входа:</b> {invite_link}\n\n"
+        error_text += "❌ Не удалось назначить вас администратором. Попробуйте позже или обратитесь к владельцу бота.\n\nВойдите в чат, чтобы я мог сделать вас админом. После этого нажмите 'Повторить' или 'Сделать меня админом'."
+        await callback.message.edit_text(
+            error_text,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🔄 Повторить", callback_data="make_admin")],
+                    [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="skip_admin")],
+                    [InlineKeyboardButton(text="🔑 Сделать меня админом", callback_data="make_admin")]
+                ]
+            ),
+            parse_mode="HTML"
+        )
+
+def register_commands(dp: Dispatcher, telethon: TelethonService):
+    """
+    Регистрирует все обработчики команд и middlewares
+    Args:
+        dp: Диспетчер
+        telethon: Сервис Telethon
+    """
+    # Middleware для Telethon
+    dp.message.middleware(TelethonMiddleware(telethon))
+    dp.callback_query.middleware(TelethonMiddleware(telethon))
+    # Только приватные чаты
+    router.message.filter(F.chat.type == "private")
+    # Регистрируем все обработчики из этого файла
+    dp.include_router(router)
